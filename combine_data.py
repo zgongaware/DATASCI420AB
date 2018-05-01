@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine
-# import config       # Credentials stored in config.py in working directory
+import config       # Credentials stored in config.py in working directory
 import pandas as pd
 import pandas_profiling
 
@@ -7,8 +7,7 @@ import pandas_profiling
 def main():
 
     # Define postgres engine
-    # engine = create_engine('postgresql://{}:{}@localhost:5432/DataSets'.format(config.username, config.password))
-    engine = create_engine('postgresql://postgres:7red5221@localhost:5432/DataSets')
+    engine = create_engine('postgresql://{}:{}@localhost:5432/DataSets'.format(config.username, config.password))
 
     # Merge data
     both = merge_data(engine)
