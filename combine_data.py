@@ -10,6 +10,21 @@ def main():
     # engine = create_engine('postgresql://{}:{}@localhost:5432/DataSets'.format(config.username, config.password))
     engine = create_engine('postgresql://postgres:7red5221@localhost:5432/DataSets')
 
+    # Merge data
+    both = merge_data(engine)
+
+    # Create additional features
+    both = engineer_features(both)
+
+    # Drop extra columns
+    both = drop_columns(both)
+
+    # Send to database
+    #both.to_sql('players_final', engine, index=False, if_exists='replace')
+
+
+def merge_data(engine):
+
     # Years of available data
     years = range(2005, 2014)
 
@@ -33,39 +48,52 @@ def main():
     # Drop duplicates
     both = both.drop_duplicates(subset=['first_name', 'last_name', 'position', 'year'], keep='last')
 
-    # Combine height / weight fields
-    both['height'] = both['height'].fillna(both['heightinchestotal'])
-    both['weight'] = both['weight_x'].fillna(both['weight_y'])
-    both['college'] = both['team_name'].fillna(both['college'])
+    return both
 
-    # Create additional features
 
-    # Drop extraneous columns
+def drop_columns(df):
+    # Drop extra columns
     drop_cols = ['index_x', 'weight_x', 'weight_y', 'Unnamed: 26', 'Unnamed: 27', 'heightinchestotal',
                  'heightfeet', 'heightinches', 'index_y', 'index', 'level_0', 'name', 'team_name','home_country',
                  'home_state', 'home_town', 'last_school', 'misc_ret', 'misc_ret_td', 'misc_ret_yard', 'def_2xp_att',
                  'def_2xp_made', 'fumble_lost', 'nflgrade', 'off_2xp_att', 'off_2xp_made', 'off_xp_kick_att',
-                 'pass_conv', 'pick', 'pickround', 'picktotal', 'punt_yard', 'sack_yard', 'tack_for_loss_yard',
+                 'pass_conv', 'pick', 'pickround', 'picktotal', 'punt_yard', 'sack_yard', 'tack_for_loss_yard', 
                  'wonderlic', 'pass_att', 'field_goal_att']
+    
+    df = df.drop(drop_cols, axis=1)
+    
+    return df
 
-    both = both.drop(drop_cols, axis=1)
 
-    both.position.unique()
+def engineer_features(df):
+    
+    # Combine height / weight fields
+    df['height'] = df['height'].fillna(df['heightinchestotal'])
+    df['weight'] = df['weight_x'].fillna(df['weight_y'])
+    df['college'] = df['team_name'].fillna(df['college'])
+    
+    # Add side of ball
+    df['side_of_ball'] = df['position'].map(side_of_ball())
+    
+    return df
 
-    profile = pandas_profiling.ProfileReport(both)
-    profile.to_file(outputfile="/profile.html")
 
-    # Send to database
-    #both.to_sql('players_final', engine, index=False, if_exists='replace')
-
-def side_of_ball(df):
-    side = {
+def side_of_ball():
+    side = pd.Series({
         'offense': ['FB', 'TE', 'WR', 'OL', 'OG', 'OT', 'C', 'QB', 'RB', 'HB', 'SE', 'TB', 'FL', 'OC', 'SB'],
         'defense': ['DT', 'S', 'CB', 'LB', 'DL', 'DB', 'OLB', 'DE', 'DS', 'FS', 'SS', 'WLB', 'NT', 'ILB', 'MLB',
                     'SLB', 'RV', 'NG', 'ROV', 'SN'],
         'special_teams': ['K', 'PK', 'P', 'LS'],
         'other': ['HOLD', 'ATH']
-        }
+        })
+
+    position_map = {}
+    for k, v in side.iteritems():
+        for i in v:
+            position_map.update({i:k})
+
+    return position_map
+
 
 if __name__ == "__main__":
     main()
