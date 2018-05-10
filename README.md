@@ -8,7 +8,7 @@ the NFL draft he'll be selected in?
 
 **Data Sources:**
 
-Credit to Sean J Taylor and his [Learning the Draft]((https://seanjtaylor.github.io/learning-the-draft/)) project for original collection of data.
+Credit to Sean J Taylor and his [Learning the Draft](https://seanjtaylor.github.io/learning-the-draft/) project for original collection of data.
 
 Located in data directory:
 - college_stats.csv - Collegiate stats of players, drafted and undrafted
