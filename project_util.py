@@ -1,5 +1,7 @@
+from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
+
 
 
 """ **** DATA COLLECTION **** """
@@ -110,9 +112,6 @@ def engineer_features(df):
     # Format Height
     df['height'] = df['height'].apply(lambda x: height_to_inches(x))
 
-    # Side of Ball
-    df['side_of_ball'] = df['pos'].map(side_of_ball())
-
     # Position Group
     df['position_group'] = df['pos'].map(position_group())
 
@@ -159,25 +158,6 @@ def position_group():
 
     position_map = {}
     for k, v in position.iteritems():
-        for i in v:
-            position_map.update({i: k})
-
-    return position_map
-
-
-def side_of_ball():
-    """
-    Map positions to general side of ball.
-    :return:
-    """
-    side = pd.Series({
-        'offense': ['T', 'WR', 'RB', 'TE', 'QB', 'G', 'C', 'FB', 'OL', 'OG', 'OT'],
-        'defense': ['DE', 'LB', 'DT', 'DB', 'NT', 'DL', 'OLB', 'CB', 'FS', 'ILB', 'SS', 'S'],
-        'special_teams': ['K', 'P', 'LS']
-        })
-
-    position_map = {}
-    for k, v in side.iteritems():
         for i in v:
             position_map.update({i: k})
 
@@ -244,11 +224,50 @@ def roll_up_colleges(df):
 """ **** MODELING PREP **** """
 
 
-def perform_modeling_prep(df):
+def perform_modeling_prep(df, target_col):
+
+    df = binarize_columns(df)
 
     df = drop_extra_cols(df)
 
-    df = factorize_object_columns(df)
+    df = scale_features(df)
+
+    X_train, y_train, X_test, y_test = create_test_and_train_sets(df, target_col, test_size=0.2, seed=10)
+
+    return X_train, y_train, X_test, y_test
+
+
+def scale_features(df):
+    """
+    Use min-max scaling on all numeric features.
+    :param df:
+    :return:
+    """
+    # Scale features
+    scaled_features = {}
+
+    for each in df.columns[1:]:
+        mean, std = df[each].mean(), df[each].std()
+        scaled_features[each] = [mean, std]
+        df.loc[:, each] = (df[each] - mean) / std
+
+    return df
+
+
+def binarize_columns(df):
+    """
+    Convert categorical columns to binary flags
+    :param df:
+    :return:
+    """
+    # Position
+    df = pd.concat([df, pd.get_dummies(df['pos'])], axis=1)
+
+    # College
+    df = pd.concat([df, pd.get_dummies(df['college'])], axis=1)
+
+    # Convert spaces to underscore and lower case
+    df.columns = df.columns.str.replace('\s+', '_').str.lower()
 
     return df
 
@@ -259,23 +278,31 @@ def drop_extra_cols(df):
     :param df:
     :return:
     """
-    df = df.drop(['year', 'pick', 'team', 'player', 'key'], axis=1)
+    df = df.drop(['year', 'pick', 'team', 'player', 'key', 'position_group',
+                  'college', 'pos'], axis=1)
 
     return df
 
 
-def factorize_object_columns(df):
+def create_test_and_train_sets(df, target_col, test_size=0.2, seed=10):
     """
-    Convert object (string) columns to factors (numbers)
+    Split into training and test sets and break out target column
     :param df:
+    :param target_col:
+    :param test_size:
     :return:
     """
-    cols_to_factorize = df.select_dtypes(include=['object']).columns.tolist()
 
-    for col in cols_to_factorize:
-        df[col] = pd.factorize(df[col])[0]
+    # Split into training and testing data
+    train, test = train_test_split(df, test_size=test_size, random_state=seed)
 
-    return df
+    # Break out feature and target columns
+    X_train = train.drop(target_col, axis=1)
+    y_train = train[target_col]
+    X_test = test.drop(target_col, axis=1)
+    y_test = test[target_col]
+
+    return X_train, y_train, X_test, y_test
 
 
 """ **** UNIT TESTS **** """
@@ -286,7 +313,6 @@ def perform_unit_tests():
     unit_test_height_to_inches()
     unit_test_classify_colleges()
     unit_test_roll_up_colleges()
-    unit_test_factorize_object_columns()
 
 
 def unit_test_height_to_inches():
@@ -334,15 +360,4 @@ def unit_test_roll_up_colleges():
 
     assert set(expected) == set(df['college'].value_counts()), "roll_up_colleges() - DID NOT RECEIVE EXPECTED OUTCOME"
 
-
-def unit_test_factorize_object_columns():
-
-    data = [[1, '1', True, 321042.241], [2, 'b', False, 131.01], [3, 43, True, np.NaN]]
-
-    df = pd.DataFrame(data=data, columns=['a', 'b', 'c', 'd'])
-
-    df = factorize_object_columns(df)
-
-    assert len(df.select_dtypes(include=['object']).columns) == 0,\
-        "factorize_object_columns() - DID NOT RECEIVE EXPECTED OUTCOME"
 
