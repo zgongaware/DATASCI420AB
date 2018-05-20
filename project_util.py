@@ -125,7 +125,7 @@ def engineer_features(df):
     df = impute_combine_stats(df)
 
     # Roll-up Colleges
-    df = roll_up_colleges(df)
+    df = create_college_tier(df)
 
     return df
 
@@ -198,42 +198,19 @@ def impute_combine_stats(df):
     return df
 
 
-def classify_college(x):
-    """
-    Classify colleges based on their z-score.
-    :param x:
-    :return:
-    """
-    if type(x.zscore) not in [float, int]:
-        return np.NaN
-    elif x.zscore >= 2:
-        return 'Top School'
-    elif 0 <= x.zscore < 2:
-        return "Mid-sized School"
-    else:
-        return "Small School"
+def create_college_tier(df):
+    df['draftees'] = df['round'].apply(lambda x: 0 if x == 8 else 1)
 
+    # Roll up colleges by number of draftees
+    coll = df.groupby('college').agg({'draftees': 'sum'})
 
-def roll_up_colleges(df):
-    """
-    Using classify_college(), roll middling and small schools into general categories
-    :param df:
-    :return:
-    """
-    # Get counts of players from each school
-    colleges = df.college.value_counts().to_frame().reset_index()
+    # Assign tier based on quartile
+    coll['college_tier'] = pd.qcut(coll.draftees, q=4, duplicates='drop', labels=[4, 3, 2, 1])
 
-    # Get z-score based on number of players
-    colleges['zscore'] = (colleges.college - colleges.college.mean()) / colleges.college.std(ddof=0)
+    # Map to dataframe
+    df['college_tier'] = df.college.map(coll['college_tier'].to_dict()).astype(int)
 
-    # Roll middling and small schools up
-    colleges['rename'] = colleges.apply(classify_college, axis=1)
-
-    # Send new values to dictionary
-    new_names = dict(colleges[['index', 'rename']].to_dict('split')['data'])
-
-    # Remap colleges based on dictionary
-    df['college'] = df['college'].map(new_names)
+    df = df.drop(['draftees'], axis=1)
 
     return df
 
@@ -283,7 +260,7 @@ def binarize_columns(df):
     df = pd.concat([df, pd.get_dummies(df['position_group'])], axis=1)
 
     # College
-    df = pd.concat([df, pd.get_dummies(df['college'])], axis=1)
+    df = pd.concat([df, pd.get_dummies(df['college_tier'], prefix='tier')], axis=1)
 
     # Convert spaces to underscore and lower case
     df.columns = df.columns.str.replace('\s+', '_').str.lower()
@@ -301,7 +278,8 @@ def drop_extra_cols(df):
                   'rush_att', 'receptions', 'scrim_avg', 'scrim_tds', 'scrim_yds', 'adj_yards_per_attempt',
                   'comp_pct', 'int_rate', 'int_yards_avg', 'kick_fgm', 'kick_return_avg', 'kick_xpm',
                   'punt_return_avg', 'rec_avg', 'rush_avg', 'safety', 'scrim_plays', 'td_fr', 'td_int',
-                  'td_kr', 'td_pr', 'td_rec', 'td_rush', 'td_tot', 'total_pts', 'twopm', 'yards_per_attempt'], axis=1)
+                  'td_kr', 'td_pr', 'td_rec', 'td_rush', 'td_tot', 'total_pts', 'twopm', 'yards_per_attempt',
+                  'college_tier'], axis=1)
 
     # df = df.drop(['dl', 's', 'ls'], axis=1)
 
@@ -382,8 +360,7 @@ def perform_svm(X_train, y_train, X_test, y_test):
 def perform_unit_tests():
 
     unit_test_height_to_inches()
-    unit_test_classify_colleges()
-    unit_test_roll_up_colleges()
+    # (Add some more unit tests)
 
 
 def unit_test_height_to_inches():
@@ -397,38 +374,9 @@ def unit_test_height_to_inches():
     assert set(expected) == set(received), "height_to_inches() - DID NOT RECEIVE EXPECTED OUTCOME"
 
 
-def unit_test_classify_colleges():
-    df = pd.DataFrame.from_dict({'index': ['a', 'b', 'c', 'd'], 'zscore': [3.24, 0, -0.132, 'x']})
-
-    expected = ['Top School', 'Mid-sized School', 'Small School', np.NaN]
-
-    df['results'] = df.apply(classify_college, axis=1)
-
-    assert set(expected) == set(df['results']), "classify_college() - DID NOT RECEIVE EXPECTED OUTCOME"
 
 
-def unit_test_roll_up_colleges():
 
-    expected = [15, 25, 40]
 
-    values = []
-    for i in range(0, 40):
-        values.append('a')
-
-    for i in range(0, 15):
-        values.append('b')
-
-    for i in range(0, 5):
-        values.append('c')
-        values.append('d')
-        values.append('e')
-        values.append('f')
-        values.append('g')
-
-    df = pd.DataFrame.from_dict({"college": values})
-
-    df = roll_up_colleges(df)
-
-    assert set(expected) == set(df['college'].value_counts()), "roll_up_colleges() - DID NOT RECEIVE EXPECTED OUTCOME"
 
 
