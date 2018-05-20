@@ -1,7 +1,8 @@
+from sklearn.ensemble import RandomForestClassifier
+from sklearn import metrics, svm
 from sklearn.model_selection import train_test_split
 import numpy as np
 import pandas as pd
-
 
 
 """ **** DATA COLLECTION **** """
@@ -94,8 +95,13 @@ def combine_data_sets(draft, comb, stats):
     # Flag players who didn't participate in the combine with 0
     combined['combine_participant'].fillna(0, inplace=True)
     combined['pick'].fillna(0, inplace=True)
-    combined['round'].fillna(0, inplace=True)
+    combined['round'].fillna(8, inplace=True)
     combined['team'].fillna('Unknown', inplace=True)
+
+    # Convert numeric columns back to int
+    int_cols = ['round', 'combine_participant', 'age']
+
+    combined[int_cols] = combined[int_cols].astype(int, errors='ignore')
 
     return combined
 
@@ -173,10 +179,21 @@ def impute_combine_stats(df):
     cols = ['position_group', 'age', 'height', 'weight', 'forty', 'vertical', 'broad', 'bench',
             'threecone', 'shuttle']
 
+    # Impute the mode for each position group and test - MEAN (best accuracy so far)
     imputer = df.loc[:, cols].groupby('position_group').mean().to_dict()
+
+    # Impute the mode for each position group and test - MODE
+    # imputer = df.loc[:, cols].groupby('position_group').agg(lambda x: round(x, 1).value_counts().index[0]).to_dict()
+
+    # Impute the mode for each position group and test - MEDIAN
+    # imputer = df.loc[:, cols].groupby('position_group').median().to_dict()
 
     for metric in imputer:
         df[metric].fillna(df['position_group'].map(imputer[metric]), inplace=True)
+
+    # Round measures
+    r_cols = ['age', 'height', 'weight']
+    df[r_cols] = df[r_cols].astype(int)
 
     return df
 
@@ -190,7 +207,7 @@ def classify_college(x):
     if type(x.zscore) not in [float, int]:
         return np.NaN
     elif x.zscore >= 2:
-        return x['index']
+        return 'Top School'
     elif 0 <= x.zscore < 2:
         return "Mid-sized School"
     else:
@@ -224,20 +241,21 @@ def roll_up_colleges(df):
 """ **** MODELING PREP **** """
 
 
-def perform_modeling_prep(df, target_col):
+def perform_modeling_prep(df, target_col, test_size=0.35):
 
     df = binarize_columns(df)
 
     df = drop_extra_cols(df)
 
-    df = scale_features(df)
+    df = scale_features(df, target_col)
 
-    X_train, y_train, X_test, y_test = create_test_and_train_sets(df, target_col, test_size=0.2, seed=10)
+    X_train, y_train, X_test, y_test = create_test_and_train_sets(df, target_col, test_size=test_size,
+                                                                  seed=10)
 
     return X_train, y_train, X_test, y_test
 
 
-def scale_features(df):
+def scale_features(df, target_col):
     """
     Use min-max scaling on all numeric features.
     :param df:
@@ -246,7 +264,8 @@ def scale_features(df):
     # Scale features
     scaled_features = {}
 
-    for each in df.columns[1:]:
+    # for each in df.drop(target_col, axis=1).select_dtypes(include=['float64']).columns:
+    for each in df.drop(target_col, axis=1).columns:
         mean, std = df[each].mean(), df[each].std()
         scaled_features[each] = [mean, std]
         df.loc[:, each] = (df[each] - mean) / std
@@ -261,7 +280,7 @@ def binarize_columns(df):
     :return:
     """
     # Position
-    df = pd.concat([df, pd.get_dummies(df['pos'])], axis=1)
+    df = pd.concat([df, pd.get_dummies(df['position_group'])], axis=1)
 
     # College
     df = pd.concat([df, pd.get_dummies(df['college'])], axis=1)
@@ -278,8 +297,13 @@ def drop_extra_cols(df):
     :param df:
     :return:
     """
-    df = df.drop(['year', 'pick', 'team', 'player', 'key', 'position_group',
-                  'college', 'pos'], axis=1)
+    df = df.drop(['year', 'pick', 'team', 'player', 'key', 'position_group', 'college', 'pos', 'attempts',
+                  'rush_att', 'receptions', 'scrim_avg', 'scrim_tds', 'scrim_yds', 'adj_yards_per_attempt',
+                  'comp_pct', 'int_rate', 'int_yards_avg', 'kick_fgm', 'kick_return_avg', 'kick_xpm',
+                  'punt_return_avg', 'rec_avg', 'rush_avg', 'safety', 'scrim_plays', 'td_fr', 'td_int',
+                  'td_kr', 'td_pr', 'td_rec', 'td_rush', 'td_tot', 'total_pts', 'twopm', 'yards_per_attempt'], axis=1)
+
+    # df = df.drop(['dl', 's', 'ls'], axis=1)
 
     return df
 
@@ -303,6 +327,53 @@ def create_test_and_train_sets(df, target_col, test_size=0.2, seed=10):
     y_test = test[target_col]
 
     return X_train, y_train, X_test, y_test
+
+
+""" **** MODELING **** """
+
+
+def perform_random_forest(X_train, y_train, X_test, y_test):
+    """
+    Fit Random Forest model and return classifier, predictions, and accuracy score
+    :param X_train:
+    :param y_train:
+    :param X_test:
+    :param y_test:
+    :return:
+    """
+    # Define and fit the random forest model
+    clf = RandomForestClassifier(n_estimators=100, n_jobs=2)
+    clf.fit(X_train, y_train)
+
+    # Create the predictions on the validation data without the label
+    y_predict = clf.predict(X_test)
+
+    # Determine accuracy of these predictions
+    accuracy = clf.score(X_test, y_test)
+
+    return clf, y_predict, accuracy
+
+
+def perform_svm(X_train, y_train, X_test, y_test):
+    """
+    Fit SVM classifier model and return classifier, predictions, and accuracy score
+    :param X_train:
+    :param y_train:
+    :param X_test:
+    :param y_test:
+    :return:
+    """
+    # Define and fit SVM classifier
+    clf = svm.SVC(kernel='rbf', probability=True)
+    clf.fit(X_train, y_train)
+
+    # Create the predictions on the validation data without the label
+    y_predict = clf.predict(X_test)
+
+    # Determine accuracy of these predictions
+    accuracy = clf.score(X_test, y_test)
+
+    return clf, y_predict, accuracy
 
 
 """ **** UNIT TESTS **** """
@@ -329,7 +400,7 @@ def unit_test_height_to_inches():
 def unit_test_classify_colleges():
     df = pd.DataFrame.from_dict({'index': ['a', 'b', 'c', 'd'], 'zscore': [3.24, 0, -0.132, 'x']})
 
-    expected = ['a', 'Mid-sized School', 'Small School', np.NaN]
+    expected = ['Top School', 'Mid-sized School', 'Small School', np.NaN]
 
     df['results'] = df.apply(classify_college, axis=1)
 
